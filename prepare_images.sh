@@ -43,6 +43,22 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo "== Working in $WORK_DIR =="
 
+# Check every external tool this script needs BEFORE downloading
+# anything — a missing package should fail in a second, not after a
+# 400MB download that then silently produces a broken image.
+REQUIRED_TOOLS=(wget qemu-img qemu-system-aarch64 cloud-localds grep sort)
+missing=""
+for tool in "${REQUIRED_TOOLS[@]}"; do
+  command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+done
+if [ -n "$missing" ]; then
+  echo "ERROR: missing required tools:$missing"
+  echo "Install with:"
+  echo "  sudo apt install -y qemu-system-arm qemu-utils cloud-image-utils wget"
+  exit 1
+fi
+echo "-- All required tools found."
+
 # Pre-flight check + real download, with a loud, specific failure
 # instead of the silent exit `-q` used to cause. `--spider` does a
 # HEAD-equivalent check so a bad URL fails in seconds, not after
@@ -90,7 +106,10 @@ instance-id: piweb-prep-${RANDOM}
 local-hostname: piweb-base
 EOF
 
-  cloud-localds "$out" "$WORK_DIR/user-data" "$WORK_DIR/meta-data"
+  if ! cloud-localds "$out" "$WORK_DIR/user-data" "$WORK_DIR/meta-data"; then
+    echo "ERROR: cloud-localds failed building $out"
+    return 1
+  fi
 }
 
 # Boots the seed against the disk once, headlessly, letting cloud-init
@@ -102,7 +121,7 @@ customize_image() {
   local ram="$3"
 
   echo "== Customizing $disk (this can take 15-30+ min on Pi hardware) =="
-  qemu-system-aarch64 \
+  if ! qemu-system-aarch64 \
     -M virt -cpu host -enable-kvm \
     -m "$ram" \
     -drive file="$disk",if=virtio,format=qcow2 \
@@ -110,7 +129,10 @@ customize_image() {
     -device virtio-net-pci,netdev=net0 \
     -netdev user,id=net0 \
     -nographic \
-    -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
+    -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd; then
+    echo "ERROR: qemu-system-aarch64 exited with an error customizing $disk"
+    return 1
+  fi
 }
 
 # ------------------------------------------------------------------ alpine
@@ -124,18 +146,26 @@ build_alpine() {
     echo "ERROR: couldn't reach $ALPINE_INDEX — check network / mirror URL."
     return 1
   }
-  filename="$(echo "$listing" | grep -oE 'nocloud_alpine-[0-9.]+-aarch64-bios-cloudinit-r[0-9]+\.qcow2' | sort -V | tail -1)"
+  # Loosened on purpose: match any *-aarch64-*cloudinit*.qcow2 filename
+  # rather than one exact prefix, since Alpine's naming has shifted
+  # before (nocloud_ vs generic_ vs no prefix at all across releases).
+  filename="$(echo "$listing" | grep -oE '[A-Za-z0-9_.-]*aarch64[A-Za-z0-9_.-]*cloudinit[A-Za-z0-9_.-]*\.qcow2' | sort -V | tail -1)"
   if [ -z "$filename" ]; then
     echo "ERROR: couldn't find an aarch64 cloudinit image in the Alpine listing."
-    echo "Check $ALPINE_INDEX manually and hardcode ALPINE_URL if the naming changed."
+    echo "Here's what .qcow2 files ARE listed at $ALPINE_INDEX :"
+    echo "$listing" | grep -oE '[A-Za-z0-9_.-]*\.qcow2' | sort -u | sed 's/^/  /'
+    echo "Pick the right one from that list and set it directly, e.g.:"
+    echo "  ALPINE_URL=\"${ALPINE_INDEX}<filename-from-above>\""
+    echo "then swap the alpine fetch line in build_alpine() to use \$ALPINE_URL"
+    echo "instead of the discovery logic, and re-run."
     return 1
   fi
   echo "-- Found: $filename"
 
   fetch "${ALPINE_INDEX}${filename}" "$raw" "Alpine" || return 1
-  qemu-img resize "$raw" 8G
-  make_seed_iso "$WORK_DIR/alpine-seed.img" "  - lxqt\n  - lxqt-session\n  - xterm\n  - sudo\n  - chromium"
-  customize_image "$raw" "$WORK_DIR/alpine-seed.img" 1024
+  qemu-img resize "$raw" 8G || { echo "ERROR: qemu-img resize failed for Alpine"; return 1; }
+  make_seed_iso "$WORK_DIR/alpine-seed.img" "  - lxqt\n  - lxqt-session\n  - xterm\n  - sudo\n  - chromium" || return 1
+  customize_image "$raw" "$WORK_DIR/alpine-seed.img" 1024 || return 1
   mv "$raw" "$final"
   echo "== Alpine base ready: $final =="
 }
@@ -146,9 +176,9 @@ build_debian() {
   local final="$IMAGES_DIR/debian-base.qcow2"
   echo "== Fetching Debian 12 arm64 generic cloud image =="
   fetch "$DEBIAN_URL" "$raw" "Debian" || return 1
-  qemu-img resize "$raw" 8G
-  make_seed_iso "$WORK_DIR/debian-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo"
-  customize_image "$raw" "$WORK_DIR/debian-seed.img" 1024
+  qemu-img resize "$raw" 8G || { echo "ERROR: qemu-img resize failed for Debian"; return 1; }
+  make_seed_iso "$WORK_DIR/debian-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo" || return 1
+  customize_image "$raw" "$WORK_DIR/debian-seed.img" 1024 || return 1
   mv "$raw" "$final"
   echo "== Debian base ready: $final =="
 }
@@ -159,9 +189,9 @@ build_ubuntu() {
   local final="$IMAGES_DIR/ubuntu-base.qcow2"
   echo "== Fetching Ubuntu Server minimal arm64 cloud image (24.04 LTS) =="
   fetch "$UBUNTU_URL" "$raw" "Ubuntu" || return 1
-  qemu-img resize "$raw" 8G
-  make_seed_iso "$WORK_DIR/ubuntu-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo"
-  customize_image "$raw" "$WORK_DIR/ubuntu-seed.img" 1024
+  qemu-img resize "$raw" 8G || { echo "ERROR: qemu-img resize failed for Ubuntu"; return 1; }
+  make_seed_iso "$WORK_DIR/ubuntu-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo" || return 1
+  customize_image "$raw" "$WORK_DIR/ubuntu-seed.img" 1024 || return 1
   mv "$raw" "$final"
   echo "== Ubuntu base ready: $final =="
 }
