@@ -1,0 +1,98 @@
+{% set title = "piweb — " + machine['name'] %}
+{% include "_shell_open.html" %}
+
+<div class="console-shell">
+  <div class="console-bar">
+    <div class="left">
+      <span class="status-dot on"></span>
+      <strong>{{ machine['name'] }}</strong>
+      <span id="conn-state" class="console-hint">connecting…</span>
+      <span class="console-hint">press <kbd>Esc</kbd> <kbd>Esc</kbd> quickly to release the cursor back to your computer</span>
+    </div>
+    <div>
+      <button id="shutdown-btn" class="btn btn-danger">Shut down</button>
+      <a href="{{ url_for('dashboard') }}" class="btn">Back to machines</a>
+    </div>
+  </div>
+
+  <div class="console-canvas-wrap">
+    <div id="screen" style="width:100%; height:100%;"></div>
+  </div>
+</div>
+
+<script type="module">
+import RFB from "{{ url_for('static', filename='novnc/core/rfb.js') }}";
+
+const machineId = {{ machine['id'] }};
+const HEARTBEAT_MS = 20000;
+
+// The websocket bridge (websockify) runs on a fixed local port, exposed
+// publicly through a second Cloudflare Tunnel ingress rule at the
+// /vncws path prefix on the same hostname — see README for the exact
+// ingress config. Falls back to a direct port for local/LAN testing.
+const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+const useTunnelPath = window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost";
+const wsUrl = useTunnelPath
+  ? `${wsProtocol}//${window.location.host}/vncws/`
+  : `${wsProtocol}//${window.location.hostname}:6080/`;
+
+const stateEl = document.getElementById('conn-state');
+let rfb;
+
+function connect() {
+  rfb = new RFB(document.getElementById('screen'), wsUrl);
+  rfb.viewOnly = false;
+  rfb.scaleViewport = true;
+  rfb.resizeSession = false; // guest resolution is fixed by the VM config, not the browser window
+
+  rfb.addEventListener('connect', () => { stateEl.textContent = 'connected'; });
+  rfb.addEventListener('disconnect', (e) => {
+    stateEl.textContent = e.detail.clean ? 'disconnected' : 'connection lost — retrying in 3s';
+    if (!e.detail.clean) setTimeout(connect, 3000);
+  });
+  rfb.addEventListener('credentialsrequired', () => {
+    // Base images don't set a VNC password (access is already gated by
+    // piweb's own login + Cloudflare Tunnel) — this only fires if that
+    // assumption changes on a given image.
+    stateEl.textContent = 'this machine unexpectedly requires a VNC password';
+  });
+}
+connect();
+
+// -------------------------------------------------------------- heartbeat
+function beat() {
+  fetch('/machines/' + machineId + '/heartbeat', { method: 'POST' });
+}
+beat();
+const heartbeatInterval = setInterval(beat, HEARTBEAT_MS);
+
+window.addEventListener('beforeunload', function () {
+  navigator.sendBeacon('/machines/' + machineId + '/heartbeat');
+});
+
+// --------------------------------------------------- shutdown, Esc-escape
+document.getElementById('shutdown-btn').addEventListener('click', function () {
+  if (!confirm('Shut down ' + {{ machine['name']|tojson }} + '?')) return;
+  clearInterval(heartbeatInterval);
+  if (rfb) rfb.disconnect();
+  fetch('/machines/' + machineId + '/stop', { method: 'POST' })
+    .then(function () { window.location = '/'; });
+});
+
+// Double-tap Esc within 500ms blurs the noVNC canvas so keystrokes stop
+// being forwarded into the guest and go back to the host browser/OS.
+// A single Esc still passes through normally (some apps use it).
+let lastEsc = 0;
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    const now = Date.now();
+    if (now - lastEsc < 500) {
+      document.activeElement && document.activeElement.blur();
+      stateEl.textContent = 'released to host — click the screen to re-enter';
+    }
+    lastEsc = now;
+  }
+}, true);
+</script>
+
+{% include "_shell_close.html" %}

@@ -1,0 +1,36 @@
+{% set title = "piweb — settings" %}
+{% include "_shell_open.html" %}
+
+<div class="topbar">
+  <div class="brand">PI<span class="accent">WEB</span></div>
+  <a class="logout-link" href="{{ url_for('dashboard') }}">Back</a>
+</div>
+
+<div class="container" style="max-width:480px;">
+  <div class="eyebrow">{{ os_labels[machine['os_type']] }}</div>
+  <h1>{{ machine['name'] }} — settings</h1>
+
+  <p class="machine-meta" style="margin-bottom:24px;">
+    Guest OS login: <strong>{{ machine['guest_username'] }}</strong>
+    (set at creation — delete and recreate the machine to change it)
+  </p>
+
+  {% if error %}<div class="notice">{{ error }}</div>{% endif %}
+
+  <form method="post">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" value="{{ machine['name'] }}" required maxlength="40">
+
+    <label for="ram_mb">RAM (MB)</label>
+    <input type="number" id="ram_mb" name="ram_mb" value="{{ machine['ram_mb'] }}" min="512" max="3072" step="256">
+
+    <p class="machine-meta" style="margin-bottom:20px;">
+      Disk size and base OS can't be changed after creation — delete and
+      recreate the machine if you need a different one.
+    </p>
+
+    <button type="submit" class="btn-primary">Save changes</button>
+  </form>
+</div>
+
+{% include "_shell_close.html" %}

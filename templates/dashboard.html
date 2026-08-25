@@ -1,0 +1,92 @@
+{% set title = "piweb — machines" %}
+{% include "_shell_open.html" %}
+
+<div class="topbar">
+  <div class="brand">PI<span class="accent">WEB</span></div>
+  <a class="logout-link" href="{{ url_for('logout') }}">Sign out</a>
+</div>
+
+<div class="glyph-strip">
+  {% for m in machines %}
+    <div class="glyph-dot {{ 'lit' if m['status'] in ['running','starting'] else '' }}" title="{{ m['name'] }}"></div>
+  {% endfor %}
+  {% if not machines %}<div class="glyph-dot"></div>{% endif %}
+</div>
+
+<div class="container">
+  <div class="top-actions">
+    <div>
+      <div class="eyebrow">Raspberry Pi 4 · 4GB</div>
+      <h1>Virtual machines</h1>
+    </div>
+    <a href="{{ url_for('new_machine') }}" class="btn btn-primary">+ New machine</a>
+  </div>
+
+  {% if any_running %}
+    <div class="notice">Only one machine can run at a time on this hardware. Stop the running machine before starting another.</div>
+  {% endif %}
+
+  {% if machines %}
+    <div class="machine-grid">
+      {% for m in machines %}
+        <div class="machine-card {{ 'running' if m['status'] in ['running','starting'] else '' }}">
+          <div>
+            <div class="status-tag">
+              <span class="status-dot {{ 'on' if m['status'] in ['running','starting'] else '' }}"></span>
+              {{ m['status'] }}
+            </div>
+            <div class="machine-name">{{ m['name'] }}</div>
+            <div class="machine-meta">{{ os_labels[m['os_type']] }} · {{ m['ram_mb'] }}MB RAM · {{ m['disk_gb'] }}GB disk</div>
+            <div class="machine-meta">Guest login: {{ m['guest_username'] }}</div>
+          </div>
+          <div class="card-actions">
+            {% if m['status'] == 'stopped' %}
+              <button class="btn btn-primary run-btn" data-id="{{ m['id'] }}" {% if any_running %}disabled{% endif %}>Run</button>
+              <a class="btn" href="{{ url_for('machine_settings', machine_id=m['id']) }}">Settings</a>
+              <form method="post" action="{{ url_for('delete_machine', machine_id=m['id']) }}"
+                    onsubmit="return confirm('Delete {{ m['name'] }}? This removes its disk permanently.');">
+                <button type="submit" class="btn btn-danger">Delete</button>
+              </form>
+            {% else %}
+              <a class="btn btn-primary" href="{{ url_for('console', machine_id=m['id']) }}">Open console</a>
+              <button class="btn btn-danger stop-btn" data-id="{{ m['id'] }}">Shut down</button>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p>No machines yet.</p>
+      <a href="{{ url_for('new_machine') }}" class="btn btn-primary">+ Create your first machine</a>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.run-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    fetch('/machines/' + btn.dataset.id + '/start', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          window.location = data.redirect;
+        } else {
+          alert(data.error || 'Could not start machine.');
+          btn.disabled = false;
+        }
+      });
+  });
+});
+
+document.querySelectorAll('.stop-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    if (!confirm('Shut down this machine?')) return;
+    fetch('/machines/' + btn.dataset.id + '/stop', { method: 'POST' })
+      .then(function () { window.location.reload(); });
+  });
+});
+</script>
+
+{% include "_shell_close.html" %}

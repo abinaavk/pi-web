@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title|default('piweb') }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="{{ url_for('static', filename='js/mobile-check.js') }}"></script>
+</head>
+<body>
+  <div class="dot-field"></div>
+
+  <div id="screen-blocker" class="blocker">
+    <div class="blocker-code">SCREEN&nbsp;SIZE&nbsp;NOT&nbsp;CORRECT</div>
+    <h1 style="margin:0;">This console needs a <span class="accent">desktop screen</span></h1>
+    <p style="color:var(--text-dim); max-width:420px;">
+      piweb runs full virtual machines with mouse and keyboard passthrough —
+      it isn't usable on a phone or narrow tablet window. Open this on a
+      computer with a screen at least 1024px wide.
+    </p>
+  </div>
+
+  <div id="app-root" style="display:none;">

@@ -1,0 +1,70 @@
+{% set title = "piweb — new machine" %}
+{% include "_shell_open.html" %}
+
+<div class="topbar">
+  <div class="brand">PI<span class="accent">WEB</span></div>
+  <a class="logout-link" href="{{ url_for('dashboard') }}">Cancel</a>
+</div>
+
+<div class="container" style="max-width:480px;">
+  <div class="eyebrow">New machine</div>
+  <h1>Choose a base OS</h1>
+
+  {% if error %}<div class="notice">{{ error }}</div>{% endif %}
+
+  <form method="post" action="{{ url_for('new_machine') }}">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" placeholder="e.g. dev-box" required maxlength="40">
+
+    <label for="os_type">Base OS</label>
+    <select id="os_type" name="os_type" required>
+      <option value="" disabled selected>Select one</option>
+      {% for key, label in os_labels.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="form-row">
+      <div>
+        <label for="ram_mb">RAM (MB)</label>
+        <input type="number" id="ram_mb" name="ram_mb" value="2048" min="512" max="3072" step="256">
+      </div>
+      <div>
+        <label for="disk_gb">Disk (GB)</label>
+        <input type="number" id="disk_gb" name="disk_gb" value="8" min="4" max="64" step="1">
+      </div>
+    </div>
+
+    <p class="machine-meta" style="margin-bottom:20px;">
+      Keep RAM at 2048MB or below — the host needs headroom, and only one
+      machine can run at a time on this Pi.
+    </p>
+
+    <div class="eyebrow" style="margin-top:8px;">Guest OS login</div>
+    <p class="machine-meta" style="margin-bottom:16px;">
+      The desktop auto-logs in on boot with this account — you won't be
+      asked for it again unless you need <code>sudo</code> inside the
+      machine. Only a hashed version of the password is ever stored.
+    </p>
+
+    <label for="guest_username">Username</label>
+    <input type="text" id="guest_username" name="guest_username"
+           placeholder="e.g. dev" pattern="[a-z][a-z0-9_-]{2,31}" required
+           title="Lowercase letters, numbers, - or _, starting with a letter, 3-32 chars">
+
+    <div class="form-row">
+      <div>
+        <label for="guest_password">Password</label>
+        <input type="password" id="guest_password" name="guest_password" minlength="8" required>
+      </div>
+      <div>
+        <label for="guest_password_confirm">Confirm</label>
+        <input type="password" id="guest_password_confirm" name="guest_password_confirm" minlength="8" required>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-primary">Create machine</button>
+  </form>
+</div>
+
+{% include "_shell_close.html" %}

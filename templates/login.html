@@ -1,0 +1,14 @@
+{% set title = "piweb — sign in" %}
+{% include "_shell_open.html" %}
+
+<div class="login-shell">
+  <div class="login-mark">PI<span class="accent">WEB</span></div>
+  <form class="login-card" method="post" action="{{ url_for('login') }}">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autofocus required autocomplete="current-password">
+    <button type="submit" class="btn-primary" style="width:100%;">Enter</button>
+    {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+  </form>
+</div>
+
+{% include "_shell_close.html" %}
