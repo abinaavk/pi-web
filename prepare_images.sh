@@ -24,10 +24,49 @@ set -euo pipefail
 IMAGES_DIR="$(dirname "$0")/images"
 WORK_DIR="$(mktemp -d)"
 
+# ---------------------------------------------------------- image sources
+# Debian and Ubuntu pin a specific release/codename — these directories
+# are permanent once published, so they don't go stale. Alpine cuts a
+# new stable branch roughly every 6 months and retires old ones off the
+# mirror, so instead of pinning a version we point at "latest-stable"
+# and discover the exact filename at runtime (see fetch_alpine below).
+#
+# If a URL below 404s (mirrors do reorganize occasionally), the error
+# message will tell you exactly which line to edit — this script does
+# NOT fail silently anymore.
+ALPINE_INDEX="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/cloud/"
+DEBIAN_URL="https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2"
+UBUNTU_URL="https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64.img"
+
 mkdir -p "$IMAGES_DIR"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo "== Working in $WORK_DIR =="
+
+# Pre-flight check + real download, with a loud, specific failure
+# instead of the silent exit `-q` used to cause. `--spider` does a
+# HEAD-equivalent check so a bad URL fails in seconds, not after
+# however long a multi-GB download takes to time out.
+fetch() {
+  local url="$1"
+  local out="$2"
+  local label="$3"
+
+  echo "-- Checking $label URL: $url"
+  if ! wget --spider -q "$url"; then
+    echo ""
+    echo "ERROR: $label download URL doesn't resolve (404 or DNS failure):"
+    echo "  $url"
+    echo "Mirrors reorganize their layout occasionally. Open that URL's"
+    echo "parent directory in a browser to find the current filename,"
+    echo "then edit the corresponding *_URL variable near the top of"
+    echo "this script and re-run."
+    return 1
+  fi
+
+  echo "-- Downloading $label (this is a real download, can take a while)"
+  wget --progress=bar:force:noscroll -O "$out" "$url"
+}
 
 # ---------------------------------------------------------------- cloud-init
 # Package-install only. Powers itself off once done so we know the pass
@@ -78,9 +117,22 @@ customize_image() {
 build_alpine() {
   local raw="$WORK_DIR/alpine-cloud.qcow2"
   local final="$IMAGES_DIR/alpine-base.qcow2"
-  echo "== Fetching Alpine aarch64 cloud image =="
-  wget -q --show-progress -O "$raw" \
-    "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/cloud/nocloud_alpine-3.20.3-aarch64-bios-cloudinit-r0.qcow2"
+
+  echo "== Finding current Alpine aarch64 cloud image =="
+  local listing filename
+  listing="$(wget -qO- "$ALPINE_INDEX")" || {
+    echo "ERROR: couldn't reach $ALPINE_INDEX — check network / mirror URL."
+    return 1
+  }
+  filename="$(echo "$listing" | grep -oE 'nocloud_alpine-[0-9.]+-aarch64-bios-cloudinit-r[0-9]+\.qcow2' | sort -V | tail -1)"
+  if [ -z "$filename" ]; then
+    echo "ERROR: couldn't find an aarch64 cloudinit image in the Alpine listing."
+    echo "Check $ALPINE_INDEX manually and hardcode ALPINE_URL if the naming changed."
+    return 1
+  fi
+  echo "-- Found: $filename"
+
+  fetch "${ALPINE_INDEX}${filename}" "$raw" "Alpine" || return 1
   qemu-img resize "$raw" 8G
   make_seed_iso "$WORK_DIR/alpine-seed.img" "  - lxqt\n  - lxqt-session\n  - xterm\n  - sudo\n  - chromium"
   customize_image "$raw" "$WORK_DIR/alpine-seed.img" 1024
@@ -93,8 +145,7 @@ build_debian() {
   local raw="$WORK_DIR/debian-cloud.qcow2"
   local final="$IMAGES_DIR/debian-base.qcow2"
   echo "== Fetching Debian 12 arm64 generic cloud image =="
-  wget -q --show-progress -O "$raw" \
-    "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2"
+  fetch "$DEBIAN_URL" "$raw" "Debian" || return 1
   qemu-img resize "$raw" 8G
   make_seed_iso "$WORK_DIR/debian-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo"
   customize_image "$raw" "$WORK_DIR/debian-seed.img" 1024
@@ -106,9 +157,8 @@ build_debian() {
 build_ubuntu() {
   local raw="$WORK_DIR/ubuntu-cloud.qcow2"
   local final="$IMAGES_DIR/ubuntu-base.qcow2"
-  echo "== Fetching Ubuntu Server minimal arm64 cloud image =="
-  wget -q --show-progress -O "$raw" \
-    "https://cloud-images.ubuntu.com/minimal/releases/jammy/release/ubuntu-22.04-minimal-cloudimg-arm64.img"
+  echo "== Fetching Ubuntu Server minimal arm64 cloud image (24.04 LTS) =="
+  fetch "$UBUNTU_URL" "$raw" "Ubuntu" || return 1
   qemu-img resize "$raw" 8G
   make_seed_iso "$WORK_DIR/ubuntu-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo"
   customize_image "$raw" "$WORK_DIR/ubuntu-seed.img" 1024
@@ -116,11 +166,19 @@ build_ubuntu() {
   echo "== Ubuntu base ready: $final =="
 }
 
-build_alpine
-build_debian
-build_ubuntu
+FAILED=""
+build_alpine || FAILED="$FAILED alpine"
+build_debian || FAILED="$FAILED debian"
+build_ubuntu || FAILED="$FAILED ubuntu"
 
 echo ""
+if [ -n "$FAILED" ]; then
+  echo "Done, but these failed:$FAILED — see the specific error above"
+  echo "for each, fix the relevant URL variable near the top of this"
+  echo "script, and re-run just this script again (it always rebuilds"
+  echo "all three, so re-running is safe even for the ones that worked)."
+  exit 1
+fi
 echo "All three base images are in $IMAGES_DIR"
 echo "No account exists on them yet — each machine gets its own username"
 echo "and password, set in the 'New machine' form when you create it."
