@@ -107,6 +107,7 @@ def _write_machine_seed(name, guest_username, password_hash):
         with open(user_data_path, "w") as f:
             f.write(f"""#cloud-config
 hostname: {name}
+ssh_pwauth: true
 users:
   - name: {guest_username}
     passwd: "{password_hash}"
