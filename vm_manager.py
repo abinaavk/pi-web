@@ -231,6 +231,8 @@ def start_machine(db, machine):
         "-device", "virtio-tablet-pci",   # absolute pointer — maps 1:1 to browser mouse coords
         "-vnc", f"{VNC_HOST}:{vnc_display}",
         "-bios", "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
+        "-chardev", f"file,id=serial0,path={os.path.join(LOG_DIR, machine['name'] + '-serial.log')}",
+        "-serial", "chardev:serial0",   # guest's own boot/console output — was previously invisible entirely
     ]
 
     try:
@@ -254,6 +256,7 @@ def start_machine(db, machine):
     ws_log = open(os.path.join(LOG_DIR, f"{machine['name']}-websockify.log"), "ab")
     ws_cmd = [
         "websockify", "--web", os.path.join(os.path.dirname(__file__), "static", "novnc"),
+        "--heartbeat", "30",   # Cloudflare Tunnel drops idle websockets around ~100s of silence
         f"{VNC_HOST}:{ws_port}", f"{VNC_HOST}:{vnc_port}",
     ]
     ws_proc = subprocess.Popen(
