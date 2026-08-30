@@ -125,7 +125,7 @@ runcmd:
     autologin-user-timeout=0
     user-session=lxqt
     CONF
-  - systemctl enable lightdm || true
+  - systemctl enable --now lightdm || true
 """)
         with open(meta_data_path, "w") as f:
             f.write(f"instance-id: piweb-{name}-{uuid.uuid4().hex[:8]}\n")
