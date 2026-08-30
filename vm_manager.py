@@ -225,7 +225,7 @@ def start_machine(db, machine):
         "-drive", f"file={machine['disk_path']},if=virtio,format=qcow2",
         "-drive", f"file={machine['seed_path']},if=virtio,format=raw",
         "-device", "virtio-net-pci,netdev=net0",
-        "-netdev", "user,id=net0",
+        "-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22",
         "-device", "virtio-gpu-pci",       # -M virt has no default video adapter — without this the VNC framebuffer is just empty/black
         "-device", "virtio-keyboard-pci",
         "-device", "virtio-tablet-pci",   # absolute pointer — maps 1:1 to browser mouse coords
