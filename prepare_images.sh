@@ -164,7 +164,7 @@ build_alpine() {
 
   fetch "${ALPINE_INDEX}${filename}" "$raw" "Alpine" || return 1
   qemu-img resize "$raw" 8G || { echo "ERROR: qemu-img resize failed for Alpine"; return 1; }
-  make_seed_iso "$WORK_DIR/alpine-seed.img" "  - lxqt\n  - lxqt-session\n  - xterm\n  - sudo\n  - chromium" || return 1
+  make_seed_iso "$WORK_DIR/alpine-seed.img" "  - lxqt\n  - lxqt-session\n  - lightdm\n  - lightdm-gtk-greeter\n  - xterm\n  - sudo\n  - chromium" || return 1
   customize_image "$raw" "$WORK_DIR/alpine-seed.img" 1024 || return 1
   mv "$raw" "$final"
   echo "== Alpine base ready: $final =="
@@ -177,7 +177,7 @@ build_debian() {
   echo "== Fetching Debian 12 arm64 generic cloud image =="
   fetch "$DEBIAN_URL" "$raw" "Debian" || return 1
   qemu-img resize "$raw" 8G || { echo "ERROR: qemu-img resize failed for Debian"; return 1; }
-  make_seed_iso "$WORK_DIR/debian-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo" || return 1
+  make_seed_iso "$WORK_DIR/debian-seed.img" "  - lxqt\n  - lxqt-core\n  - lightdm\n  - xterm\n  - sudo" || return 1
   customize_image "$raw" "$WORK_DIR/debian-seed.img" 1024 || return 1
   mv "$raw" "$final"
   echo "== Debian base ready: $final =="
@@ -190,7 +190,7 @@ build_ubuntu() {
   echo "== Fetching Ubuntu Server minimal arm64 cloud image (24.04 LTS) =="
   fetch "$UBUNTU_URL" "$raw" "Ubuntu" || return 1
   qemu-img resize "$raw" 8G || { echo "ERROR: qemu-img resize failed for Ubuntu"; return 1; }
-  make_seed_iso "$WORK_DIR/ubuntu-seed.img" "  - lxqt\n  - lxqt-core\n  - xterm\n  - sudo" || return 1
+  make_seed_iso "$WORK_DIR/ubuntu-seed.img" "  - lxqt\n  - lxqt-core\n  - lightdm\n  - xterm\n  - sudo" || return 1
   customize_image "$raw" "$WORK_DIR/ubuntu-seed.img" 1024 || return 1
   mv "$raw" "$final"
   echo "== Ubuntu base ready: $final =="
