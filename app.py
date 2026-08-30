@@ -291,14 +291,27 @@ def start_background_thread():
     t.start()
 
 
+# Runs at import time — this is what makes it work under gunicorn too,
+# not just `python3 app.py` directly. Gunicorn imports this module once
+# per worker process rather than executing the `__main__` block, so the
+# watcher has to start here to run at all under that deployment.
+#
+# IMPORTANT: run gunicorn with exactly one worker (--workers 1) for
+# this app. It's a single-admin panel with no need for concurrency, and
+# more than one worker means more than one of these threads independently
+# polling/stopping machines, plus a separate SECRET_KEY per worker unless
+# PIWEB_SECRET_KEY is set in the environment (it must be, either way —
+# see README).
+if not os.path.exists(DB_PATH):
+    raise SystemExit(
+        "No database found. Run:\n"
+        "  sqlite3 piweb.db < schema.sql\n"
+        "  python3 setup_password.py\n"
+    )
+start_background_thread()
+
+
 if __name__ == "__main__":
-    if not os.path.exists(DB_PATH):
-        raise SystemExit(
-            "No database found. Run:\n"
-            "  sqlite3 piweb.db < schema.sql\n"
-            "  python3 setup_password.py\n"
-        )
-    start_background_thread()
     # Bind to localhost only — Cloudflare Tunnel talks to this locally
     # and handles the public-facing TLS side. Don't expose 0.0.0.0
     # directly to the internet.

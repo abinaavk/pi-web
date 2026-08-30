@@ -119,6 +119,47 @@ Order matters — the path-matched rule must come before the catch-all.
 cloudflared tunnel run piweb
 ```
 
+## Running under gunicorn (not just `python3 app.py`)
+
+Two things are required if you deploy this behind gunicorn/systemd
+rather than running `python3 app.py` directly:
+
+1. **Set a fixed `PIWEB_SECRET_KEY`.** Without it, each gunicorn
+   worker process generates its own random session key at import
+   time — with more than one worker, you'll get logged out at random
+   as requests land on a worker whose key doesn't match your cookie.
+   Generate one once and keep it:
+   ```bash
+   python3 -c "import secrets; print(secrets.token_hex(32))"
+   ```
+   Then set it in your systemd unit (`Environment=PIWEB_SECRET_KEY=<value>`)
+   or wherever you're setting gunicorn's environment.
+
+2. **Run exactly one worker: `--workers 1`.** This is a single-admin
+   panel — there's no benefit to concurrency here, and more than one
+   worker means more than one inactivity-watcher thread independently
+   polling and stopping machines (harmless but wasteful), on top of
+   the session-key issue above if you skip step 1.
+
+Example gunicorn invocation:
+```bash
+PIWEB_SECRET_KEY=<your generated value> \
+  gunicorn --workers 1 --bind 127.0.0.1:5000 app:app
+```
+
+If you're running this as a systemd service and gunicorn logs
+`Control server error: [Errno 30] Read-only file system: '/home/<user>/.gunicorn'`
+on startup — that's gunicorn trying to write a stats/control file
+under `$HOME`, not anything from this app. It's usually caused by a
+systemd hardening directive like `ProtectHome=yes` on the unit making
+`/home` read-only to the service. Check:
+```bash
+systemctl cat piweb
+```
+If you see `ProtectHome=`, either remove it or set gunicorn's `$HOME`
+to a writable path the unit is allowed to touch (e.g.
+`Environment=HOME=/opt/api/piweb`).
+
 ## What Phase 3 could cover
 
 - systemd unit files for `piweb` and `cloudflared` so both survive
